@@ -73,7 +73,7 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-앱은 `http://localhost:8501`에서 열립니다. PostgreSQL healthcheck가 통과한 뒤 앱이 시작되며 데이터는 `onetouch_pgdata` 볼륨에 보존됩니다. `.env`와 API 키는 이미지에 복사되지 않습니다.
+Compose 배포 시 앱은 `http://localhost:8507`에서 열립니다. PostgreSQL healthcheck가 통과한 뒤 앱이 시작되며 데이터는 `onetouch_pgdata` 볼륨에 보존됩니다. `.env`와 API 키는 이미지에 복사되지 않습니다.
 
 서버 키를 교체할 때는 배포 호스트의 환경변수 또는 Compose 옆 `.env`만 수정하고 `docker compose up -d --force-recreate app`으로 앱 컨테이너를 다시 만드세요. 전체 키는 화면 입력란에 미리 채워지지 않고 끝 네 자리만 표시됩니다.
 
