@@ -206,10 +206,15 @@ class OnetouchRepository:
         }
 
     def quote_requests(self, quote_id: str | None) -> list[dict[str, Any]]:
-        return self._query("SELECT * FROM quote_requests WHERE (? IS NULL OR quote_id=?) ORDER BY due_at", (quote_id, quote_id))
+        if quote_id is None:
+            return self._query("SELECT * FROM quote_requests ORDER BY due_at")
+        return self._query("SELECT * FROM quote_requests WHERE quote_id=? ORDER BY due_at", (quote_id,))
 
     def drawing_features(self, drawing_id: str | None) -> list[dict[str, Any]]:
-        return self._query("SELECT d.*, f.length_mm, f.width_mm, f.height_mm, f.thickness_mm, f.material, f.round_holes, f.slots, f.hole_spacing_mm, f.feature_confidence, f.provenance FROM drawings d JOIN manufacturing_features f USING(drawing_id) WHERE (? IS NULL OR d.drawing_id=?)", (drawing_id, drawing_id))
+        sql = "SELECT d.*, f.length_mm, f.width_mm, f.height_mm, f.thickness_mm, f.material, f.round_holes, f.slots, f.hole_spacing_mm, f.feature_confidence, f.provenance FROM drawings d JOIN manufacturing_features f USING(drawing_id)"
+        if drawing_id is None:
+            return self._query(sql)
+        return self._query(sql + " WHERE d.drawing_id=?", (drawing_id,))
 
     def bom(self, quote_id: str) -> list[dict[str, Any]]:
         return self._query("SELECT * FROM bom_items WHERE quote_id=? ORDER BY bom_id", (quote_id,))
@@ -218,19 +223,33 @@ class OnetouchRepository:
         return self._query("SELECT * FROM routings WHERE quote_id=? ORDER BY sequence_no", (quote_id,))
 
     def cost_estimate(self, quote_id: str | None) -> list[dict[str, Any]]:
-        return self._query("SELECT * FROM cost_estimates WHERE (? IS NULL OR quote_id=?) ORDER BY calculated_at DESC", (quote_id, quote_id))
+        if quote_id is None:
+            return self._query("SELECT * FROM cost_estimates ORDER BY calculated_at DESC")
+        return self._query("SELECT * FROM cost_estimates WHERE quote_id=? ORDER BY calculated_at DESC", (quote_id,))
 
     def similar_quotes(self, product_family: str | None) -> list[dict[str, Any]]:
-        return self._query("SELECT *, ROUND((quoted_total_krw-actual_cost_krw)/actual_cost_krw*100,2) AS quote_variance_pct FROM quote_history WHERE (? IS NULL OR product_family=?) ORDER BY completed_at DESC", (product_family, product_family))
+        sql = "SELECT *, ROUND((quoted_total_krw-actual_cost_krw)/actual_cost_krw*100,2) AS quote_variance_pct FROM quote_history"
+        if product_family is None:
+            return self._query(sql + " ORDER BY completed_at DESC")
+        return self._query(sql + " WHERE product_family=? ORDER BY completed_at DESC", (product_family,))
 
     def material_availability(self, risks_only: bool = False) -> list[dict[str, Any]]:
         return self._query("SELECT *, available_kg-reserved_kg AS free_kg, CASE WHEN available_kg-reserved_kg<safety_stock_kg THEN '부족' ELSE '정상' END AS status FROM material_inventory WHERE (?=0 OR available_kg-reserved_kg<safety_stock_kg) ORDER BY material_code", (int(risks_only),))
 
     def approval_queue(self, quote_id: str | None, pending_only: bool = False) -> list[dict[str, Any]]:
-        return self._query("SELECT * FROM approval_queue WHERE (? IS NULL OR quote_id=?) AND (?=0 OR approval_status!='승인완료') ORDER BY requested_at", (quote_id, quote_id, int(pending_only)))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if quote_id is not None:
+            conditions.append("quote_id=?"); params.append(quote_id)
+        if pending_only:
+            conditions.append("approval_status!='승인완료'")
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        return self._query("SELECT * FROM approval_queue" + where + " ORDER BY requested_at", tuple(params))
 
     def order_feedback(self, quote_id: str | None) -> list[dict[str, Any]]:
-        return self._query("SELECT * FROM order_feedback WHERE (? IS NULL OR quote_id=?) ORDER BY updated_at DESC", (quote_id, quote_id))
+        if quote_id is None:
+            return self._query("SELECT * FROM order_feedback ORDER BY updated_at DESC")
+        return self._query("SELECT * FROM order_feedback WHERE quote_id=? ORDER BY updated_at DESC", (quote_id,))
 
     def quote_snapshot(self, quote_id: str) -> dict[str, Any]:
         quote = self.quote_requests(quote_id)
@@ -245,10 +264,9 @@ class OnetouchRepository:
                 "materials": [row for row in materials if row["specification"] in bom_specs]}
 
     def rules(self, source_table: str | None = None) -> list[dict[str, Any]]:
-        return self._query(
-            "SELECT * FROM rules WHERE (? IS NULL OR source_table=?) ORDER BY rule_id",
-            (source_table, source_table),
-        )
+        if source_table is None:
+            return self._query("SELECT * FROM rules ORDER BY rule_id")
+        return self._query("SELECT * FROM rules WHERE source_table=? ORDER BY rule_id", (source_table,))
 
     def knowledge_documents(self) -> list[dict[str, Any]]:
         return self._query(
