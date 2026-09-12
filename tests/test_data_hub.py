@@ -3,6 +3,36 @@ import json
 import pytest
 
 from onetouch_agent import OnetouchRepository, OnetouchToolRegistry
+from onetouch_agent.postgres_hub import _ConnectionAdapter
+
+
+class _FakeCursor:
+    def __init__(self):
+        self.executed = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return None
+
+    def executemany(self, sql, rows):
+        self.executed = (sql, rows)
+        return self.executed
+
+
+class _FakePsycopgConnection:
+    def __init__(self):
+        self.active_cursor = _FakeCursor()
+
+    def cursor(self):
+        return self.active_cursor
+
+
+def test_postgres_adapter_uses_cursor_for_executemany():
+    connection = _FakePsycopgConnection()
+    result = _ConnectionAdapter(connection).executemany("INSERT INTO demo VALUES (?)", [(1,), (2,)])
+    assert result == ("INSERT INTO demo VALUES (%s)", [(1,), (2,)])
 
 
 def test_dashboard_and_confidence_routing(tmp_path):

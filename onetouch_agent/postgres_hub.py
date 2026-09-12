@@ -27,7 +27,8 @@ class _ConnectionAdapter:
         return self.connection.execute(self._sql(sql), params)
 
     def executemany(self, sql: str, rows: list[tuple[Any, ...]]) -> Any:
-        return self.connection.executemany(self._sql(sql), rows)
+        with self.connection.cursor() as cursor:
+            return cursor.executemany(self._sql(sql), rows)
 
     def executescript(self, script: str) -> None:
         for statement in script.split(";"):
