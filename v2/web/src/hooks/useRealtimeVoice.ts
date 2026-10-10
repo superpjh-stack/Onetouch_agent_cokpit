@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {track} from '../types';
+import {apiUrl, track} from '../types';
 import type {WakePolicy} from '../wake';
 import {RealtimeTurns} from './realtimeTurns';
 
@@ -58,14 +58,14 @@ export function useRealtimeVoice(token:string,lot:string,onTurn:(turn:Turn)=>voi
     onError:message=>{if(run===epoch.current)setError(message)},
     tool:async call=>{
      if(run!==epoch.current)return JSON.stringify({error:'음성 세션이 종료되었습니다.'});
-     const response=await fetch('/api/realtime/tool',{method:'POST',signal:controller.current?.signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name:call.name,arguments:JSON.parse(call.arguments)})});
+     const response=await fetch(apiUrl('/realtime/tool'),{method:'POST',signal:controller.current?.signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name:call.name,arguments:JSON.parse(call.arguments)})});
      const payload=await response.json();return response.ok?String(payload.output):JSON.stringify({error:payload.detail||'도구 조회 실패'});
     },
    });
    const dc=peer.createDataChannel('oai-events');channel.current=dc;dc.onmessage=e=>handleEvent(String(e.data),run);dc.onopen=()=>{if(run===epoch.current)setState('listening')};
    setState('connecting');const offer=await peer.createOffer();if(run!==epoch.current)return;await peer.setLocalDescription(offer);if(run!==epoch.current)return;
    const params=new URLSearchParams();if(lot)params.set('quote_id',lot);
-   const response=await fetch('/api/realtime/session'+(params.size?'?'+params:''),{method:'POST',headers:{'Content-Type':'application/sdp',Authorization:'Bearer '+token},body:offer.sdp,signal:controller.current?.signal});
+   const response=await fetch(apiUrl('/realtime/session'+(params.size?'?'+params:'')),{method:'POST',headers:{'Content-Type':'application/sdp',Authorization:'Bearer '+token},body:offer.sdp,signal:controller.current?.signal});
    const answer=await response.text();if(!response.ok){let message='실시간 음성 세션을 시작하지 못했습니다.';try{message=JSON.parse(answer).detail||message}catch{}throw new Error(message)}
    if(run!==epoch.current)return;await peer.setRemoteDescription({type:'answer',sdp:answer});track('question_submitted',{source:'voice',mode:'ai'});
   }catch(e){if(run===epoch.current){const message=(e as Error).name==='NotAllowedError'?'마이크 권한을 허용해 주세요.':(e as Error).message;stop();setError(message);setState('error')}}

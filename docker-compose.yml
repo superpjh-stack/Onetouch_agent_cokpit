@@ -25,6 +25,14 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - default
+      - rodem_https
 
 volumes:
   onetouch_pgdata:
+
+networks:
+  rodem_https:
+    external: true
+    name: rodem-mes_mesnet

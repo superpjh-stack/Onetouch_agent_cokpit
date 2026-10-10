@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
-import {track} from '../types';
+import {apiUrl, track} from '../types';
 
 export type VoiceState = 'idle'|'permission'|'recording'|'stopping'|'review'|'transcribing'|'generating'|'ready'|'playing';
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -38,7 +38,7 @@ export function useVoice(token:string, onTranscript:(text:string)=>void) {
     transition('transcribing');controller.current=new AbortController();const began=performance.now();
     const form=new FormData();form.append('file',file,file instanceof File?file.name:`recording.${ext}`);
     try {
-      const response=await fetch('/api/voice/transcribe',{method:'POST',headers:{Authorization:'Bearer '+token},body:form,signal:controller.current.signal});
+      const response=await fetch(apiUrl('/voice/transcribe'),{method:'POST',headers:{Authorization:'Bearer '+token},body:form,signal:controller.current.signal});
       const result=await response.json();if(!response.ok)throw new Error(result.detail||'음성 변환에 실패했습니다.');
       if(run!==epoch.current)return;
       if(!result.text?.trim())throw new Error('문장을 확인하지 못했어요. 다시 녹음하거나 직접 입력하세요.');
@@ -93,7 +93,7 @@ export function useVoice(token:string, onTranscript:(text:string)=>void) {
     if(!['idle','ready','playing'].includes(stateRef.current))return;
     cancel();const run=epoch.current;transition('generating');controller.current=new AbortController();
     try{
-      const response=await fetch('/api/voice/speak',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({text:text.slice(0,4000)}),signal:controller.current.signal});
+      const response=await fetch(apiUrl('/voice/speak'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({text:text.slice(0,4000)}),signal:controller.current.signal});
       if(!response.ok){const result=await response.json();throw new Error(result.detail||'음성을 만들지 못했습니다.')}
       const blob=await response.blob();if(run!==epoch.current)return;
       controller.current=null;url.current=URL.createObjectURL(blob);const audio=new Audio(url.current);player.current=audio;

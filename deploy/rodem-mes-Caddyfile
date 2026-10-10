@@ -1,0 +1,12 @@
+srv1934103.hstgr.cloud {
+	@onetouch_root path /onetouch
+	redir @onetouch_root /onetouch/ 308
+
+	handle_path /onetouch/* {
+		reverse_proxy onetouch-v2:8501
+	}
+
+	handle {
+		reverse_proxy app:8030
+	}
+}

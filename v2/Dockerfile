@@ -3,6 +3,8 @@ WORKDIR /build
 COPY v2/web/package.json v2/web/package-lock.json ./
 RUN npm ci
 COPY v2/web/ ./
+ARG VITE_BASE_PATH=/
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build
 
 FROM python:3.12-slim
