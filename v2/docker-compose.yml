@@ -11,11 +11,3 @@ services:
       COCKPIT_ACCESS_TOKEN: ${COCKPIT_ACCESS_TOKEN:-}
       OPENAI_REALTIME_MODEL: ${OPENAI_REALTIME_MODEL:-gpt-realtime-2.1}
       OPENAI_REALTIME_VOICE: ${OPENAI_REALTIME_VOICE:-marin}
-    networks:
-      - default
-      - rodem_https
-
-networks:
-  rodem_https:
-    external: true
-    name: rodem-mes_mesnet
