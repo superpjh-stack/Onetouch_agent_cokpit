@@ -1,0 +1,11 @@
+# Run from the repository root with the original Compose file first.
+# Preserve its PostgreSQL service, volume, project name and host port.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: v2/Dockerfile
+    environment:
+      COCKPIT_ACCESS_TOKEN: ${COCKPIT_ACCESS_TOKEN:-}
+      OPENAI_REALTIME_MODEL: ${OPENAI_REALTIME_MODEL:-gpt-realtime-2.1}
+      OPENAI_REALTIME_VOICE: ${OPENAI_REALTIME_VOICE:-marin}

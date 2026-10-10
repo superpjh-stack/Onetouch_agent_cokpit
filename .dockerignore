@@ -7,3 +7,17 @@ data/postgres
 postgres.log
 tests
 *.pyc
+
+.venv-v2
+v2/web/node_modules
+v2/web/dist
+v2/verification
+v2/tests
+**/.env
+**/.env.*
+!**/.env.example
+.agents
+.codex
+.aws
+*.sql
+*.dump

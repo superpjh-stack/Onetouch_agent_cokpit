@@ -7,3 +7,7 @@ data/*.db
 !data/onetouch_demo.db
 data/postgres/
 postgres.log
+.venv-v2/
+v2/web/node_modules/
+v2/web/dist/
+*.tsbuildinfo
