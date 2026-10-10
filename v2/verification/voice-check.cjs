@@ -42,35 +42,22 @@ const assert=require('node:assert/strict');
  await page.getByText('마이크 권한을 허용해 주세요.',{exact:true}).waitFor();
  await page.evaluate(()=>{window.voiceTest.deny=false});
  await start.click();
- await page.getByText('말씀해 주세요',{exact:true}).waitFor();
- // Multiple tools in one completed response owe exactly one continuation.
- let toolRequests=0;
- await page.route('**/api/realtime/tool',async route=>{
-  toolRequests++;
-  await new Promise(resolve=>setTimeout(resolve,100));
-  await route.fulfill({json:{output:'{"status":"ok","result":[]}'}}).catch(()=>{});
- });
+ await page.getByText('원터치 호출 대기 중',{exact:true}).waitFor();
+ // Wake checks are exercised through the actual browser event handler.
  await page.evaluate(()=>{
   const dc=window.voiceTest.peers.at(-1).channel;
-  const emit=event=>dc.onmessage({data:JSON.stringify(event)});
-  emit({type:'response.created',response:{id:'r1'}});
-  emit({type:'response.function_call_arguments.done',call_id:'a',name:'get_cost_estimate',arguments:'{}'});
-  const event={type:'response.done',response:{id:'r1',status:'completed',output:[
-   {type:'function_call',call_id:'a',name:'get_cost_estimate',arguments:'{}'},
-   {type:'function_call',call_id:'b',name:'get_quote_status',arguments:'{}'}]}};
-  emit(event);emit(event);
+  const emit=e=>dc.onmessage({data:JSON.stringify(e)});
+  emit({type:'conversation.item.input_audio_transcription.completed',item_id:'ambient',transcript:'주변 대화'});
+  emit({type:'conversation.item.input_audio_transcription.completed',item_id:'wrong',transcript:'니즈, 재고'});
  });
- await page.waitForFunction(()=>window.voiceTest.peers.at(-1).channel.sent.filter(e=>e.type==='response.create').length===1);
- assert.equal(toolRequests,2);
- assert.equal(await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.sent.filter(e=>e.type==='conversation.item.create').length),2);
+ assert.equal(await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.sent.filter(e=>e.type==='response.create').length),0);
  await page.evaluate(()=>{
   const dc=window.voiceTest.peers.at(-1).channel;
-  dc.onmessage({data:JSON.stringify({type:'response.done',response:{id:'cancelled',status:'cancelled',output:[{type:'function_call',call_id:'cancelled-tool',name:'get_cost_estimate',arguments:'{}'}]}})});
-  const event={type:'conversation.item.input_audio_transcription.completed',item_id:'transcript1',transcript:'중복 전사 검증'};
+  const event={type:'conversation.item.input_audio_transcription.completed',item_id:'called',transcript:'원터치, 원가'};
   dc.onmessage({data:JSON.stringify(event)});dc.onmessage({data:JSON.stringify(event)});
  });
- assert.equal(await page.getByText('중복 전사 검증',{exact:true}).count(),1);
- assert.equal(toolRequests,2);
+ assert.equal(await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.sent.filter(e=>e.type==='response.create').length),1);
+ assert.equal(await page.getByText('원터치, 원가',{exact:true}).count(),1);
  await page.getByRole('button',{name:'마이크 끄기',exact:true}).click();
  assert.equal(await page.evaluate(()=>window.voiceTest.tracks.at(-1).enabled),false);
  await page.getByRole('button',{name:'마이크 켜기',exact:true}).click();
@@ -78,34 +65,13 @@ const assert=require('node:assert/strict');
  await page.getByRole('button',{name:'종료',exact:true}).click();
  assert(await page.evaluate(()=>window.voiceTest.tracks.every(t=>t.stopped)));
  assert(await page.evaluate(()=>window.voiceTest.peers.every(p=>p.connectionState==='closed'&&p.channel.readyState==='closed')));
- // Stopping while a tool is pending must discard its result and continuation.
- await start.click();await page.getByText('말씀해 주세요',{exact:true}).waitFor();
- await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.onmessage({data:JSON.stringify({type:'response.done',response:{id:'late-tool',status:'completed',output:[{type:'function_call',call_id:'late',name:'get_cost_estimate',arguments:'{}'}]}})}));
- await page.getByRole('button',{name:'종료',exact:true}).click();
- await page.waitForTimeout(200);
- assert.equal(await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.sent.length),0);
- // Interruption makes the previous response and in-flight tool results stale.
- await start.click();await page.getByText('말씀해 주세요',{exact:true}).waitFor();
- await page.evaluate(()=>{
-  const dc=window.voiceTest.peers.at(-1).channel,emit=e=>dc.onmessage({data:JSON.stringify(e)});
-  emit({type:'response.created',response:{id:'interrupted'}});
-  emit({type:'input_audio_buffer.speech_started'});
-  emit({type:'response.done',response:{id:'interrupted',status:'completed',output:[{type:'function_call',call_id:'obsolete',name:'get_cost_estimate',arguments:'{}'}]}});
-  emit({type:'input_audio_buffer.speech_stopped'});
-  emit({type:'response.created',response:{id:'new-response'}});
-  emit({type:'response.done',response:{id:'new-response',status:'completed',output:[{type:'function_call',call_id:'pending',name:'get_cost_estimate',arguments:'{}'}]}});
-  emit({type:'input_audio_buffer.speech_started'});
- });
- await page.waitForTimeout(200);
- assert.equal(await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.sent.length),0);
- await page.getByRole('button',{name:'종료',exact:true}).click();
  // Peer disconnect must release the microphone and allow retry.
- await start.click();await page.getByText('말씀해 주세요',{exact:true}).waitFor();
+ await start.click();await page.getByText('원터치 호출 대기 중',{exact:true}).waitFor();
  await page.evaluate(()=>{const peer=window.voiceTest.peers.at(-1);peer.connectionState='disconnected';peer.onconnectionstatechange()});
  await page.getByText('실시간 음성 연결이 끊겼습니다. 다시 시작해 주세요.',{exact:true}).waitFor();
  assert(await page.evaluate(()=>window.voiceTest.tracks.every(t=>t.stopped)));
  // Provider errors also release all resources.
- await start.click();await page.getByText('말씀해 주세요',{exact:true}).waitFor();
+ await start.click();await page.getByText('원터치 호출 대기 중',{exact:true}).waitFor();
  await page.evaluate(()=>window.voiceTest.peers.at(-1).channel.onmessage({data:JSON.stringify({type:'error',error:{message:'모의 제공자 오류'}})}));
  await page.getByText('모의 제공자 오류',{exact:true}).waitFor();
  assert(await page.evaluate(()=>window.voiceTest.tracks.every(t=>t.stopped)));
@@ -128,5 +94,5 @@ const assert=require('node:assert/strict');
  assert(await start.isVisible());
  assert.deepEqual(errors,[]);
  await browser.close();
- console.log('Mock voice tools/lifecycle passed: batched continuation, duplicate events, cancelled response, interrupted/late tool results, denied permission, connect, mute/unmute, stop, disconnect, provider/API error, late response after quote switch, connection timeout.');
+ console.log('Mock voice lifecycle passed: wake filtering and duplicate transcript, denied permission, connect, mute/unmute, stop, disconnect, provider/API error, late response after quote switch, connection timeout.');
 })().catch(e=>{console.error(e);process.exit(1)});

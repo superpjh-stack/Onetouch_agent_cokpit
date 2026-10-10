@@ -25,24 +25,24 @@ def test_workspace_and_documents(client):
 
 
 def test_quote_context_and_raw_evidence(client):
-    answer = client.post('/api/chat', json={'question': '원가와 BOM', 'quote_id': 'QT-260904-002'}).json()
+    answer = client.post('/api/chat', json={'question': '원터치, 원가와 BOM', 'quote_id': 'QT-260904-002'}).json()
     assert answer['mode'] == 'demo'
     assert answer['records']
     assert all(row['quote_id'] == 'QT-260904-002' for row in answer['records'])
     assert '14,559,200원' in answer['text']
     assert answer['evidence']
-    assert client.post('/api/chat', json={'question': 'QT-missing 원가'}).status_code == 404
+    assert client.post('/api/chat', json={'question': '원터치, QT-missing 원가'}).status_code == 404
     assert client.post('/api/chat', json={'question': '  '}).status_code == 422
 
 
 def test_explicit_quote_overrides_selection(client):
-    answer = client.post('/api/chat', json={'question': 'QT-260904-001 원가', 'quote_id': 'QT-260904-002'}).json()
+    answer = client.post('/api/chat', json={'question': '원터치, QT-260904-001 원가', 'quote_id': 'QT-260904-002'}).json()
     assert answer['context']['quote_id'] == 'QT-260904-001'
     assert all(row['quote_id'] == 'QT-260904-001' for row in answer['records'])
 
 
 def test_demo_unknown_and_reset(client):
-    answer = client.post('/api/chat', json={'question': '화성의 날씨'}).json()
+    answer = client.post('/api/chat', json={'question': '원터치, 화성의 날씨'}).json()
     assert not answer['records']
     assert '확인할 수 없습니다' in answer['text']
     assert client.post('/api/chat/reset').status_code == 200
@@ -51,7 +51,7 @@ def test_demo_unknown_and_reset(client):
 def test_remote_paid_endpoints_require_token(client, monkeypatch):
     monkeypatch.setenv('OPENAI_API_KEY', 'test-secret')
     monkeypatch.setenv('COCKPIT_ACCESS_TOKEN', 'test-code')
-    for path, body in [('/api/chat', {'question': '원가', 'mode': 'ai'}),
+    for path, body in [('/api/chat', {'question': '원터치, 원가', 'mode': 'ai'}),
                        ('/api/realtime/tool', {'name': 'get_cost_estimate', 'arguments': {'quote_id': None}}),
                        ('/api/voice/speak', {'text': '확인'})]:
         assert client.post(path, json=body).status_code == 401
@@ -72,7 +72,7 @@ def test_ai_returns_actual_tool_records(client, monkeypatch):
                 return SimpleNamespace(id='first', output_text='', output=[SimpleNamespace(type='function_call', name='get_cost_estimate', arguments='{"quote_id":"QT-260904-001"}', call_id='one')])
             return SimpleNamespace(id='second', output=[], output_text='견적 후보입니다. 근거: QT-260904-001')
     monkeypatch.setattr('v2.api.OpenAI', lambda **kwargs: SimpleNamespace(responses=FakeResponses()))
-    result = client.post('/api/chat', json={'question': '원가', 'mode': 'ai', 'quote_id': 'QT-260904-001'}, headers={'Authorization': 'Bearer test-code'})
+    result = client.post('/api/chat', json={'question': '원터치, 원가', 'mode': 'ai', 'quote_id': 'QT-260904-001'}, headers={'Authorization': 'Bearer test-code'})
     assert result.status_code == 200
     assert result.json()['records'][0]['estimated_total_krw'] == 15179600
     assert result.json()['mode'] == 'ai'
@@ -82,8 +82,8 @@ def test_no_key_local_and_forwarded_access(tmp_path, monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
     monkeypatch.delenv('COCKPIT_ACCESS_TOKEN', raising=False)
     local = TestClient(create_app(OnetouchRepository(tmp_path / 'local.db')), base_url='http://localhost', client=('127.0.0.1', 1234))
-    assert local.post('/api/chat', json={'question': '원가', 'mode': 'ai'}).status_code == 503
-    assert local.post('/api/chat', json={'question': '원가', 'mode': 'ai'}, headers={'X-Forwarded-For': '8.8.8.8'}).status_code == 401
+    assert local.post('/api/chat', json={'question': '원터치, 원가', 'mode': 'ai'}).status_code == 503
+    assert local.post('/api/chat', json={'question': '원터치, 원가', 'mode': 'ai'}, headers={'X-Forwarded-For': '8.8.8.8'}).status_code == 401
 
 
 def test_realtime_session_contract(client, monkeypatch):
@@ -104,5 +104,5 @@ def test_realtime_session_contract(client, monkeypatch):
     session = json.loads(captured['files']['session'][1])
     assert len(session['tools']) == 12
     assert 'QT-260904-002' in session['instructions']
-    assert session['audio']['input']['turn_detection']['interrupt_response'] is True
+    assert session['audio']['input']['turn_detection']['interrupt_response'] is False
     assert client.post('/api/realtime/session', content=b'\xff', headers=headers).status_code == 422

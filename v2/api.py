@@ -21,6 +21,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from v2.openai_settings import save_api_key
+from v2.wake import WAKE_POLICY, calls_agent, addressed_question, question_content
 from onetouch_agent.data_hub import DEMO_DATE
 from onetouch_agent.postgres_hub import create_repository
 from onetouch_agent.factory_tools import OnetouchToolRegistry
@@ -81,7 +82,7 @@ def local_request(request: Request) -> bool:
 
 def create_app(repository=None, settings_file: Path | None = None):
     settings_file = settings_file or ROOT / ".env"
-    app = FastAPI(title='원터치 견적 AI Agent', version='2.1.0')
+    app = FastAPI(title='원터치 견적 AI Agent', version='2.2.0')
     app.state.repo = repository or create_repository(os.getenv('ONETOUCH_DB_PATH', str(ROOT / 'data/onetouch_demo.db')))
     requests = defaultdict(deque)
     rate_lock = threading.Lock()
@@ -114,15 +115,15 @@ def create_app(repository=None, settings_file: Path | None = None):
 
     @app.get('/api/health')
     def health():
-        return {'status': 'ok', 'version': '2.1.0'}
+        return {'status': 'ok', 'version': '2.2.0'}
 
     @app.get('/api/workspace')
     def workspace(request: Request):
         repo = app.state.repo
         return {'quotes': [{**row, 'product_name': row['product_family']} for row in repo.quote_requests(None)],
-                'kpi': repo.dashboard(), 'questions': QUESTIONS,
+                'kpi': repo.dashboard(), 'questions': {group: [addressed_question(q) for q in questions] for group, questions in QUESTIONS.items()},
                 'tables': [{**row, 'count': row['rows'], 'exists': True} for row in repo.table_catalog()],
-                'meta': {'company': '원터치', 'version': '2.1.0', 'demo_data': True, 'as_of': DEMO_DATE,
+                'meta': {'wake': WAKE_POLICY, 'company': '원터치', 'version': '2.2.0', 'demo_data': True, 'as_of': DEMO_DATE,
                          'backend': 'PostgreSQL' if os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL') else 'SQLite',
                          'ai_configured': bool(os.getenv('OPENAI_API_KEY')),
                          'local_dev_ai': local_request(request), 'model': os.getenv('OPENAI_MODEL', 'gpt-5.6'),
@@ -193,6 +194,8 @@ def create_app(repository=None, settings_file: Path | None = None):
         question = body.question.strip()
         if not question:
             raise HTTPException(422, '질문을 입력해 주세요.')
+        if not calls_agent(question):
+            return {'ignored': True, 'text': '', 'evidence': [], 'records': [], 'sources': [], 'data_tools': [], 'mode': body.mode, 'searched_documents': False}
         explicit = re.search(r'QT-[A-Za-z0-9-]+', question, re.I)
         quote_id = explicit.group(0).upper() if explicit else body.quote_id
         validate_quote(quote_id)
@@ -203,7 +206,7 @@ def create_app(repository=None, settings_file: Path | None = None):
                 'captured_at': now, 'demo_data': True}
         if body.mode == 'ai':
             key = require_ai(request)
-            context = json.dumps([turn.model_dump() for turn in body.history], ensure_ascii=False)
+            context = json.dumps([turn.model_dump() for turn in body.history if calls_agent(turn.question)], ensure_ascii=False)
             try:
                 answer = ManufacturingAgent(OpenAI(api_key=key, timeout=45, max_retries=0),
                     model=os.getenv('OPENAI_MODEL', 'gpt-5.6'), factory_tools=registry).ask(
@@ -215,8 +218,9 @@ def create_app(repository=None, settings_file: Path | None = None):
                     'data_tools': answer.data_tools, 'searched_documents': answer.searched_documents}
 
         # Deterministic demo lookup: no invented interpretation or calculations.
-        docs = repo.search_knowledge(question, 3)
-        q = question.lower()
+        query = question_content(question)
+        docs = repo.search_knowledge(query, 3) if query else []
+        q = query.lower()
         calls = []
         ids = [quote_id] if quote_id else [row['quote_id'] for row in repo.quote_requests(None)]
         if any(word in q for word in ['bom', '자재']):
@@ -273,10 +277,10 @@ def create_app(repository=None, settings_file: Path | None = None):
             raise HTTPException(422, 'WebRTC 연결 형식이 올바르지 않습니다.') from exc
         registry = OnetouchToolRegistry(app.state.repo)
         session = {'type': 'realtime', 'model': os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1'),
-            'instructions': AGENT_INSTRUCTIONS + f'\n선택 견적: {quote_id or "전체 기록"}. 한국어로 짧게 답하세요. 모든 수치는 도구로 조회하고 근거 문서 또는 레코드 ID를 말하세요.',
+            'instructions': AGENT_INSTRUCTIONS + f'당신의 호출명은 {WAKE_POLICY["agent_name"]}입니다. ' + f'\n선택 견적: {quote_id or "전체 기록"}. 한국어로 짧게 답하세요. 모든 수치는 도구로 조회하고 근거 문서 또는 레코드 ID를 말하세요.',
             'output_modalities': ['audio'], 'tools': [{k: v for k, v in d.items() if k != 'strict'} for d in registry.definitions],
             'tool_choice': 'auto', 'audio': {'input': {'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'ko'},
-            'noise_reduction': {'type': 'near_field'}, 'turn_detection': {'type': 'semantic_vad', 'eagerness': 'high', 'create_response': True, 'interrupt_response': True}},
+            'noise_reduction': {'type': 'near_field'}, 'turn_detection': {'type': 'semantic_vad', 'eagerness': 'high', 'create_response': False, 'interrupt_response': False}},
             'output': {'voice': os.getenv('OPENAI_REALTIME_VOICE', 'marin')}}}
         try:
             async with httpx.AsyncClient(timeout=30) as client:

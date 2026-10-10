@@ -1,10 +1,11 @@
+import type {WakePolicy} from './wake';
 export type Row = Record<string, string | number | null>;
 export type Quote = Row & {quote_id:string; drawing_id:string; product_name:string; requested_qty:number; status:string};
 export type Document = {title:string;document_id:string; filename:string; content:string; source:string; status:string};
 export type TableInfo = {table:string;label:string;count:number;exists:boolean};
-export type Workspace = {kpi: Record<string,number>;quotes:Quote[];tables:TableInfo[];questions:Record<string,string[]>;meta:{company:string;version:string;demo_data:boolean;as_of:string;backend:string;ai_configured:boolean;local_dev_ai?:boolean;model:string;retrieved_at:string}};
+export type Workspace = {kpi: Record<string,number>;quotes:Quote[];tables:TableInfo[];questions:Record<string,string[]>;meta:{wake:WakePolicy;company:string;version:string;demo_data:boolean;as_of:string;backend:string;ai_configured:boolean;local_dev_ai?:boolean;model:string;retrieved_at:string}};
 export type Evidence = {filename:string;document_id?:string;text:string};
-export type Answer = {answer_id?:string;captured_at?:string;summary?:string;retrieved_at?:string;context?:{quote_id:string|null;as_of:string};unknowns?:string[];text:string;sources:string[];evidence:Evidence[];data_tools:string[];records:Row[];searched_documents:boolean;mode:'ai'|'demo'};
+export type Answer = {ignored?:boolean;demo_data?:boolean;answer_id?:string;captured_at?:string;summary?:string;retrieved_at?:string;context?:{quote_id:string|null;as_of:string};unknowns?:string[];text:string;sources:string[];evidence:Evidence[];data_tools:string[];records:Row[];searched_documents:boolean;mode:'ai'|'demo'};
 export async function request<T>(path:string, init?:RequestInit):Promise<T> {
  const response = await fetch('/api'+path, init);
  if (!response.ok) {const data = await response.json().catch(()=>({})); throw new Error(typeof data.detail === 'string' ? data.detail : `요청을 처리하지 못했습니다 (${response.status}).`);}
