@@ -7,6 +7,6 @@ srv1934103.hstgr.cloud {
 	}
 
 	handle {
-		reverse_proxy app:8030
+		reverse_proxy rodem-mes-app-1:8030
 	}
 }

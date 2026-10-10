@@ -1,6 +1,6 @@
 # OneTouch HTTPS route
 
-The current Hostinger Rodem MES Caddy instance owns `srv1934103.hstgr.cloud` and its TLS certificate. Keep the existing MES route at `/`; mount `rodem-mes-Caddyfile` as `/etc/caddy/Caddyfile` and run Caddy with `caddy run --config /etc/caddy/Caddyfile --adapter caddyfile`.
+The current Hostinger Rodem MES Caddy instance owns `srv1934103.hstgr.cloud` and its TLS certificate. Keep the existing MES route at `/`; mount `rodem-mes-Caddyfile` as `/etc/caddy/Caddyfile` and run Caddy with `caddy run --config /etc/caddy/Caddyfile --adapter caddyfile`. The MES upstream uses its container name so it remains unambiguous when Caddy also joins the OneTouch network.
 
 Attach only the Caddy service to the external `onetouch-cockpit-v2_default` network in addition to its existing `mesnet` network:
 
