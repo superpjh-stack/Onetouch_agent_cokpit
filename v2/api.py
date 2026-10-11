@@ -85,12 +85,21 @@ def create_app(repository=None, settings_file: Path | None = None):
     app = FastAPI(title='원터치 견적 AI Agent', version='2.2.0')
     app.state.repo = repository or create_repository(os.getenv('ONETOUCH_DB_PATH', str(ROOT / 'data/onetouch_demo.db')))
     requests = defaultdict(deque)
+    access_attempts = defaultdict(deque)
     rate_lock = threading.Lock()
 
+    def valid_access_code(supplied):
+        expected = [os.getenv('COCKPIT_ACCESS_TOKEN', '')]
+        expected.extend(os.getenv('COCKPIT_ACCESS_TOKENS', '').split(','))
+        matched = False
+        for candidate in expected:
+            candidate = candidate.strip()
+            matched = hmac.compare_digest(candidate, supplied) | matched if candidate else matched
+        return matched
+
     def require_ai(request):
-        expected = os.getenv('COCKPIT_ACCESS_TOKEN', '')
         supplied = request.headers.get('authorization', '').removeprefix('Bearer ').strip()
-        if not local_request(request) and not (expected and hmac.compare_digest(expected, supplied)):
+        if not local_request(request) and not valid_access_code(supplied):
             raise HTTPException(401, '설정에서 관리자가 발급한 AI 접근 코드를 입력해 주세요.')
         key = os.getenv('OPENAI_API_KEY', '')
         if not key:
@@ -116,6 +125,24 @@ def create_app(repository=None, settings_file: Path | None = None):
     @app.get('/api/health')
     def health():
         return {'status': 'ok', 'version': '2.2.0'}
+
+    @app.post('/api/access/check')
+    def check_access(request: Request):
+        if local_request(request):
+            return {'authorized': True}
+        supplied = request.headers.get('authorization', '').removeprefix('Bearer ').strip()
+        source = request.client.host if request.client else 'unknown'
+        with rate_lock:
+            now = time.monotonic()
+            attempts = access_attempts[source]
+            while attempts and attempts[0] < now - 60:
+                attempts.popleft()
+            if len(attempts) >= 10:
+                raise HTTPException(429, '코드 확인 요청이 많습니다. 잠시 후 다시 시도해 주세요.')
+            attempts.append(now)
+        if not valid_access_code(supplied):
+            raise HTTPException(401, '접근 코드가 서버 설정과 일치하지 않습니다. 관리자에게 발급된 AI 접근 코드를 확인하세요.')
+        return {'authorized': True}
 
     @app.get('/api/workspace')
     def workspace(request: Request):

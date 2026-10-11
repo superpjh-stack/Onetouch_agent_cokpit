@@ -24,6 +24,19 @@ def test_workspace_and_documents(client):
     assert client.get('/api/tables/quote_requests?limit=101').status_code == 422
 
 
+def test_access_code_validation_supports_current_and_additional_codes(client, monkeypatch):
+    monkeypatch.setenv('COCKPIT_ACCESS_TOKEN', 'existing-code')
+    monkeypatch.setenv('COCKPIT_ACCESS_TOKENS', 'new-voice-code, another-code')
+    remote = TestClient(client.app, base_url='https://onetouch.example', client=('203.0.113.10', 1000))
+    for code in ('existing-code', 'new-voice-code', 'another-code'):
+        response = remote.post('/api/access/check', headers={'Authorization': f'Bearer {code}'})
+        assert response.status_code == 200
+        assert response.json() == {'authorized': True}
+    invalid = remote.post('/api/access/check', headers={'Authorization': 'Bearer wrong-code'})
+    assert invalid.status_code == 401
+    assert 'wrong-code' not in invalid.text
+
+
 def test_quote_context_and_raw_evidence(client):
     answer = client.post('/api/chat', json={'question': '원터치, 원가와 BOM', 'quote_id': 'QT-260904-002'}).json()
     assert answer['mode'] == 'demo'

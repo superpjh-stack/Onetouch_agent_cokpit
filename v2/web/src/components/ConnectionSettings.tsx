@@ -23,10 +23,18 @@ export function ConnectionSettings({data, token, onToken, onConfigured, onClose}
     finally { setBusy(false); }
   }
 
-  function applyCode(value: string) {
+  async function applyCode(value: string) {
     setError(''); setNotice('');
-    try { saveAccessCode(value); onToken(value.trim()); setCode(value.trim()); setNotice(value.trim() ? '접근 코드를 저장했습니다.' : '저장된 접근 코드를 삭제했습니다.'); }
-    catch { setError('브라우저 저장소를 사용할 수 없습니다. 사이트 저장소 설정을 확인하세요.'); }
+    const normalized = value.trim();
+    setBusy(true);
+    try {
+      if (normalized) await request('/access/check', {method:'POST', headers:{Authorization:'Bearer '+normalized}});
+      saveAccessCode(normalized); onToken(normalized); setCode(normalized);
+      setNotice(normalized ? '서버에서 접근 코드를 확인하고 이 브라우저에 저장했습니다.' : '저장된 접근 코드를 삭제했습니다.');
+    } catch (reason) {
+      const message = (reason as Error).message;
+      setError(message.includes('요청을 처리하지 못했습니다') ? '접근 코드를 확인할 수 없습니다. 관리자에게 발급된 코드를 다시 확인해 주세요.' : message);
+    } finally { setBusy(false); }
   }
 
   return <>
@@ -39,7 +47,7 @@ export function ConnectionSettings({data, token, onToken, onConfigured, onClose}
     {(!data.meta.local_dev_ai || token) && <section>
       <label className="form-label">AI 접근 코드<input type="password" autoComplete="off" value={code} onChange={event => setCode(event.target.value)}/></label>
       <p className="settings-copy">이 브라우저에 저장되어 다음 접속에도 사용됩니다. 공용 컴퓨터에서는 사용 후 삭제하세요.</p>
-      <div className="modal-actions"><button className="secondary-button" onClick={() => applyCode('')}>접근 코드 삭제</button><button className="primary-button" onClick={() => applyCode(code)}>연결 적용</button></div>
+      <div className="modal-actions"><button className="secondary-button" disabled={busy} onClick={() => applyCode('')}>접근 코드 삭제</button><button className="primary-button" disabled={busy} onClick={() => applyCode(code)}>{busy ? '확인 중…' : '연결 적용'}</button></div>
     </section>}
     {error && <p className="voice-error" role="alert">{error}</p>}
     {notice && <p className="settings-copy" role="status">{notice}</p>}
