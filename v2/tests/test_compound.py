@@ -77,3 +77,14 @@ def test_voice_tool_uses_same_graph(tmp_path,monkeypatch):
     a=json.loads(response.json()['output'])
     assert a['engine']=='langgraph' and a['context']['quote_id']=='QT-260904-002'
     assert a['records'] and a['voice_summary']
+
+
+def test_similar_quote_variance_and_zero_actual(tmp_path):
+    repo=OnetouchRepository(tmp_path/'variance.db')
+    rows=repo.similar_quotes('표준 잔넬')
+    assert rows and all(r['product_family']=='표준 잔넬' for r in rows)
+    for row in rows:
+        assert row['quote_variance_pct']==round((row['quoted_total_krw']-row['actual_cost_krw'])/row['actual_cost_krw']*100,2)
+    with repo._connect() as connection:
+        connection.execute('UPDATE quote_history SET actual_cost_krw=0')
+    assert all(r['quote_variance_pct'] is None for r in repo.similar_quotes(None))

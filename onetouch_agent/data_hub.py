@@ -228,10 +228,16 @@ class OnetouchRepository:
         return self._query("SELECT * FROM cost_estimates WHERE quote_id=? ORDER BY calculated_at DESC", (quote_id,))
 
     def similar_quotes(self, product_family: str | None) -> list[dict[str, Any]]:
-        sql = "SELECT *, ROUND((quoted_total_krw-actual_cost_krw)/actual_cost_krw*100,2) AS quote_variance_pct FROM quote_history"
-        if product_family is None:
-            return self._query(sql + " ORDER BY completed_at DESC")
-        return self._query(sql + " WHERE product_family=? ORDER BY completed_at DESC", (product_family,))
+        sql = "SELECT * FROM quote_history"
+        params = ()
+        if product_family is not None:
+            sql += " WHERE product_family=?"
+            params = (product_family,)
+        rows = self._query(sql + " ORDER BY completed_at DESC", params)
+        # Python rounding is consistent across SQLite and PostgreSQL REAL columns.
+        # A missing or zero actual cost cannot produce a meaningful percentage.
+        return [{**row, "quote_variance_pct": round((float(row["quoted_total_krw"])-float(row["actual_cost_krw"]))/float(row["actual_cost_krw"])*100, 2)
+                 if row["actual_cost_krw"] and row["quoted_total_krw"] is not None else None} for row in rows]
 
     def material_availability(self, risks_only: bool = False) -> list[dict[str, Any]]:
         return self._query("SELECT *, available_kg-reserved_kg AS free_kg, CASE WHEN available_kg-reserved_kg<safety_stock_kg THEN '부족' ELSE '정상' END AS status FROM material_inventory WHERE (?=0 OR available_kg-reserved_kg<safety_stock_kg) ORDER BY material_code", (int(risks_only),))
