@@ -1,4 +1,4 @@
-/* NeedsFood visual language: fresh greens, warm rice paper, and a pepper-red accent. */
+/* Onetouch: precision drawings, slate blue and copper accents. */
 :root {
   --paper: #fffefa;
   --soft: #f2f6f1;
@@ -366,3 +366,12 @@ body { background: var(--rice); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Read the beginning of answers; keep wide source tables inside the conversation. */
+.chat-scroll{overflow-anchor:none}.comparison-scroll{max-width:100%;overflow:auto;border:1px solid #dbe5e9;border-radius:10px;margin:12px 0}.comparison-scroll table{border-collapse:collapse;white-space:nowrap;font-size:12px;width:100%}.comparison-scroll th,.comparison-scroll td{padding:11px 13px;text-align:left;border-bottom:1px solid #dbe5e9}.comparison-scroll th{background:#eaf1f5;color:#224754}.compound-answer{min-width:0}.compound-answer p{white-space:pre-wrap}.agent-welcome{display:grid;place-content:center;min-height:240px}.agent-welcome h3{font-size:28px!important;font-weight:500!important;line-height:1.6!important}.recommendation-tabs{flex-wrap:wrap}.recommendation-tabs button{font-size:11px!important}.record-status summary{cursor:pointer}
+
+.recommend-tabs{display:flex;flex-wrap:wrap;gap:4px}.recommend-tabs button{font-size:11px!important;flex:1;white-space:nowrap;padding:8px 5px!important}
+
+:root{--pine:#173f58;--pine-2:#245f7c;--leaf:#4b8ba8;--pepper:#b56b37;--rice:#edf2f5;--paper:#ffffff;--line:#d8e2e8;--muted:#657a89;color:#203b4e}.app-header{background:#f9fbfc;border-color:#d6e1e8}.brand-mark{background:linear-gradient(145deg,#3c7d98,#173f58 78%)}.brand strong,.side-heading h2,.agent-header h2,.history-section h3,.recommend-section h3{color:#173f58}.brand small,.record-status,.source-note,.side-heading>div>span{color:#708494}.question-panel,.library-panel{background:#f1f5f7;border-color:#d8e2e8}.conversation-panel{background:#e7eef3}.conversation-panel:before{background:none}.assistant-panel:before{background:linear-gradient(90deg,#173f58,#4b8ba8 70%,#b8835c)}.assistant-panel{background:#fff;border-color:#d8e2e8;box-shadow:0 8px 30px #173f580c}.recommend-tabs,.library-tabs{background:#e6eef3}.recommend-section li button,.history-list>button{color:#496579}.recommend-section li button:hover,.history-list>button:hover{background:#e3edf3}.recommend-section li span,.history-section h3 svg,.recommend-section h3 svg,.agent-header .eyebrow{color:#43829f}.agent-welcome h3{color:#315e77}.realtime-voice .voice-start,.send-button{background:#225d7b!important;color:white}.user-message{background:#e8f0f5!important;color:#22475d}.settings-button{color:#315e77;border-color:#d4e0e8}.chat-scroll{scrollbar-color:#a2b7c4 transparent}.record-status{position:relative}.record-status>span{position:absolute;top:28px;right:0;background:white;padding:12px;white-space:nowrap;z-index:2;border:1px solid #d8e2e8;border-radius:8px}
+.agent-welcome,.question-panel,.library-panel,.assistant-panel{animation:none!important}.agent-welcome{opacity:1!important}.assistant-panel{color:#253f50}.document-list strong{color:#294c62}.document-list>button>svg{color:#43829f}
+@media(max-width:1150px){.question-panel,.library-panel{display:none;transition:none!important}.question-panel.mobile-open,.library-panel.mobile-open{display:block;transform:none!important;visibility:visible}.mobile-panel-button{min-width:44px;min-height:44px}}

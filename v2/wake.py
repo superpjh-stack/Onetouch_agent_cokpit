@@ -4,7 +4,7 @@ import re
 WAKE_POLICY = {
     'agent_name': '원터치',
     'wake_aliases': ['원터치', '원터치야', '원터치님'],
-    'require_wake_name': True,
+    'require_wake_name': False,
 }
 
 

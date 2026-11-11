@@ -21,6 +21,8 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from v2.openai_settings import save_api_key
+from v2.compound import analyze, QUESTION_GROUPS
+from v2.domain import EvidenceRegistry, resolve_quote
 from v2.wake import WAKE_POLICY, calls_agent, addressed_question, question_content
 from onetouch_agent.data_hub import DEMO_DATE
 from onetouch_agent.postgres_hub import create_repository
@@ -30,10 +32,7 @@ from onetouch_agent.prompts import AGENT_INSTRUCTIONS
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / '.env')
-QUESTIONS = {
-    '견적·도면': ['견적 요청과 승인대기 현황을 알려줘', '선택 견적의 원가와 BOM을 알려줘', '도면 예외와 수작업 전환 대상을 알려줘', '선택 견적의 공정 순서와 예상 공수를 알려줘', '부족한 소재와 가용재고를 확인해줘', '유사 견적의 실제원가 편차를 비교해줘', '선택 견적의 도면 치수와 재질을 확인해줘', '담당자 검토가 필요한 견적을 알려줘', '생산실적과 계획원가의 차이를 알려줘', '전체 견적의 신뢰도와 검토경로를 알려줘'],
-    '문서·규칙': ['도면 표준화 절차를 알려줘', '제조 Feature 추출 기준을 알려줘', 'BOM 생성 근거는 무엇이야?', '공정 Routing 작성 기준을 알려줘', '원가 계산과 최종 승인 기준을 알려줘', '도면 개정 변경 시 확인사항을 알려줘', '소재 부족 시 대응 절차를 알려줘', '낮은 신뢰도 견적 처리 규칙을 알려줘', '견적 모델 검증 방법을 알려줘', '고객 발송 전 확인사항을 알려줘'],
-}
+QUESTIONS = QUESTION_GROUPS
 
 
 class Turn(BaseModel):
@@ -56,21 +55,6 @@ class ToolCall(BaseModel):
 class Speech(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
-
-class EvidenceRegistry(OnetouchToolRegistry):
-    def __init__(self, repository):
-        super().__init__(repository)
-        self.records = []
-
-    def execute(self, name, arguments):
-        output = super().execute(name, arguments)
-        payload = json.loads(output)
-        if payload.get('status') == 'ok' and name != 'search_local_knowledge':
-            rows = payload['result']
-            for row in rows if isinstance(rows, list) else [rows]:
-                if isinstance(row, dict):
-                    self.records.append({'source_tool': name, 'demo_data': True, **row})
-        return output
 
 
 def local_request(request: Request) -> bool:
@@ -148,12 +132,12 @@ def create_app(repository=None, settings_file: Path | None = None):
     def workspace(request: Request):
         repo = app.state.repo
         return {'quotes': [{**row, 'product_name': row['product_family']} for row in repo.quote_requests(None)],
-                'kpi': repo.dashboard(), 'questions': {group: [addressed_question(q) for q in questions] for group, questions in QUESTIONS.items()},
+                'kpi': repo.dashboard(), 'questions': QUESTIONS,
                 'tables': [{**row, 'count': row['rows'], 'exists': True} for row in repo.table_catalog()],
                 'meta': {'wake': WAKE_POLICY, 'company': '원터치', 'version': '2.2.0', 'demo_data': True, 'as_of': DEMO_DATE,
                          'backend': 'PostgreSQL' if os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL') else 'SQLite',
                          'ai_configured': bool(os.getenv('OPENAI_API_KEY')),
-                         'local_dev_ai': local_request(request), 'model': os.getenv('OPENAI_MODEL', 'gpt-5.6'),
+                         'local_dev_ai': local_request(request), 'model': os.getenv('OPENAI_MODEL', 'gpt-5.6-sol'),
                          'retrieved_at': datetime.now(timezone.utc).isoformat()}}
 
     @app.post('/api/settings/openai')
@@ -221,32 +205,40 @@ def create_app(repository=None, settings_file: Path | None = None):
         question = body.question.strip()
         if not question:
             raise HTTPException(422, '질문을 입력해 주세요.')
-        if not calls_agent(question):
-            return {'ignored': True, 'text': '', 'evidence': [], 'records': [], 'sources': [], 'data_tools': [], 'mode': body.mode, 'searched_documents': False}
-        explicit = re.search(r'QT-[A-Za-z0-9-]+', question, re.I)
-        quote_id = explicit.group(0).upper() if explicit else body.quote_id
-        validate_quote(quote_id)
         repo = app.state.repo
-        registry = EvidenceRegistry(repo)
+        history = [{'role': role, 'text': text} for turn in body.history for role, text in [('user',turn.question),('assistant',turn.answer)]]
+        try:
+            quote_id = resolve_quote(repo, question, body.quote_id, history)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        validate_quote(quote_id)
         now = datetime.now(timezone.utc).isoformat()
-        base = {'mode': body.mode, 'context': {'quote_id': quote_id, 'as_of': DEMO_DATE},
-                'captured_at': now, 'demo_data': True}
-        if body.mode == 'ai':
-            key = require_ai(request)
-            context = json.dumps([turn.model_dump() for turn in body.history if calls_agent(turn.question)], ensure_ascii=False)
-            try:
-                answer = ManufacturingAgent(OpenAI(api_key=key, timeout=45, max_retries=0),
-                    model=os.getenv('OPENAI_MODEL', 'gpt-5.6'), factory_tools=registry).ask(
-                    f'선택 견적: {quote_id or "전체 기록"}\n이전 대화(참고만 사용): {context}\n질문: {question}')
-            except Exception as exc:
-                raise HTTPException(502, 'AI 응답을 받지 못했습니다. 서버 연결과 모델 사용 권한을 확인해 주세요.') from exc
-            return {**base, 'text': answer.text, 'evidence': answer.evidence,
-                    'sources': answer.sources, 'records': registry.records,
-                    'data_tools': answer.data_tools, 'searched_documents': answer.searched_documents}
+        base = {'mode': body.mode, 'context': {'quote_id': quote_id, 'as_of': DEMO_DATE}, 'captured_at': now, 'demo_data': True}
+        client = OpenAI(api_key=require_ai(request), timeout=40, max_retries=0) if body.mode == 'ai' else None
+        def retrieve(original, parts):
+            registry = EvidenceRegistry(repo, quote_id)
+            lookup = retrieve_demo(repo, original+'\n'+'\n'.join(parts), quote_id, registry, base)
+            if not client:
+                return lookup
+            prompt = json.dumps({'question':original,'requests':parts,'quote_id':quote_id,'history':history,'records':registry.records,'documents':lookup['evidence'],'note':'수치는 가상 샘플이며 승인된 견적이 아닙니다. 0원도 입력 불충분일 수 있으므로 수작업 전환·미검증 상태를 반드시 함께 설명하세요.'},ensure_ascii=False)
+            answer = ManufacturingAgent(client, model=os.getenv('OPENAI_MODEL','gpt-5.6-sol'), factory_tools=registry).ask(prompt)
+            evidence = list(lookup['evidence'])
+            for item in answer.evidence:
+                if item not in evidence:evidence.append(item)
+            return {**base,'text':answer.text,'records':registry.records,'evidence':evidence,'sources':answer.sources,'data_tools':answer.data_tools,'searched_documents':answer.searched_documents,'lookup_errors':registry.errors}
+        try:
+            result = analyze(question, history, retrieve, client, os.getenv('OPENAI_MODEL','gpt-5.6-sol'))
+            result['summary'] = result['voice_summary']
+            return result
+        except Exception as exc:
+            raise HTTPException(502,'분석을 완료하지 못했습니다. 서버 모델 설정과 연결을 확인해 주세요.') from exc
+        finally:
+            if client:client.close()
 
+    def retrieve_demo(repo, question, quote_id, registry, base):
         # Deterministic demo lookup: no invented interpretation or calculations.
-        query = question_content(question)
-        docs = repo.search_knowledge(query, 3) if query else []
+        query = '\n'.join(question_content(line) for line in question.splitlines())
+        docs = json.loads(registry.execute('search_local_knowledge',{'query':query,'limit':6})).get('result',[]) if query else []
         q = query.lower()
         calls = []
         ids = [quote_id] if quote_id else [row['quote_id'] for row in repo.quote_requests(None)]
@@ -270,7 +262,7 @@ def create_app(repository=None, settings_file: Path | None = None):
             calls.append(('get_order_cost_feedback', {'quote_id': quote_id}))
         if any(word in q for word in ['규칙', '기준']):
             calls.append(('get_rules', {'source_table': None}))
-        if not calls and any(word in q for word in ['견적', '현황', '납기', '요청']):
+        if any(word in q for word in ['견적', '현황', '납기', '요청']):
             calls.append(('get_quote_requests', {'quote_id': quote_id}))
         for name, args in calls:
             registry.execute(name, args)
@@ -287,7 +279,7 @@ def create_app(repository=None, settings_file: Path | None = None):
         lines.append('정해진 검색에 따른 샘플 조회이며 AI 분석·승인 결과가 아닙니다. 문서와 규칙은 샘플·미승인입니다.')
         return {**base, 'text': '\n'.join(lines), 'records': registry.records, 'evidence': docs,
                 'sources': [row['filename'] for row in docs], 'data_tools': [name for name, _ in calls],
-                'searched_documents': bool(docs)}
+                'searched_documents': bool(docs), 'lookup_errors': registry.errors}
 
     @app.post('/api/realtime/session')
     async def realtime(request: Request, quote_id: str | None = Query(None, max_length=80)):
@@ -304,10 +296,10 @@ def create_app(repository=None, settings_file: Path | None = None):
             raise HTTPException(422, 'WebRTC 연결 형식이 올바르지 않습니다.') from exc
         registry = OnetouchToolRegistry(app.state.repo)
         session = {'type': 'realtime', 'model': os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1'),
-            'instructions': AGENT_INSTRUCTIONS + f'당신의 호출명은 {WAKE_POLICY["agent_name"]}입니다. ' + f'\n선택 견적: {quote_id or "전체 기록"}. 한국어로 짧게 답하세요. 모든 수치는 도구로 조회하고 근거 문서 또는 레코드 ID를 말하세요.',
-            'output_modalities': ['audio'], 'tools': [{k: v for k, v in d.items() if k != 'strict'} for d in registry.definitions],
+            'instructions': AGENT_INSTRUCTIONS + ' 호출명 없이 질문에 답하세요. 모든 업무 질문은 analyze_manufacturing_question으로 원문 그대로 전달하고 결과의 voice_summary를 2~3문장으로 읽으세요. 자세한 근거는 화면으로 안내하세요.',
+            'output_modalities': ['audio'], 'tools': [{'type':'function','name':'analyze_manufacturing_question','description':'견적·도면 복합질문 근거 분석','parameters':{'type':'object','properties':{'question':{'type':'string'}},'required':['question'],'additionalProperties':False}}],
             'tool_choice': 'auto', 'audio': {'input': {'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'ko'},
-            'noise_reduction': {'type': 'near_field'}, 'turn_detection': {'type': 'semantic_vad', 'eagerness': 'high', 'create_response': False, 'interrupt_response': False}},
+            'noise_reduction': {'type': 'near_field'}, 'turn_detection': {'type': 'semantic_vad', 'eagerness': 'high', 'create_response': False, 'interrupt_response': True}},
             'output': {'voice': os.getenv('OPENAI_REALTIME_VOICE', 'marin')}}}
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -323,7 +315,12 @@ def create_app(repository=None, settings_file: Path | None = None):
     @app.post('/api/realtime/tool')
     def realtime_tool(body: ToolCall, request: Request):
         require_ai(request)
-        return {'output': OnetouchToolRegistry(app.state.repo).execute(body.name, body.arguments)}
+        if body.name != 'analyze_manufacturing_question':
+            return {'output': json.dumps({'error':'허용되지 않은 조회 도구입니다.'},ensure_ascii=False)}
+        turns=body.arguments.get('history',[])[-12:]
+        history=[Turn(question=str(t.get('text',''))[:2000],answer='') for t in turns if t.get('role')=='user'][-6:]
+        answer=chat(Chat(question=body.arguments.get('question',''),quote_id=body.arguments.get('quote_id'),history=history,mode='ai'),request)
+        return {'output':json.dumps(answer,ensure_ascii=False,default=str)}
 
     @app.post('/api/voice/speak')
     def speak(body: Speech, request: Request):

@@ -48,10 +48,9 @@ def test_quote_context_and_raw_evidence(client):
     assert client.post('/api/chat', json={'question': '  '}).status_code == 422
 
 
-def test_explicit_quote_overrides_selection(client):
-    answer = client.post('/api/chat', json={'question': '원터치, QT-260904-001 원가', 'quote_id': 'QT-260904-002'}).json()
-    assert answer['context']['quote_id'] == 'QT-260904-001'
-    assert all(row['quote_id'] == 'QT-260904-001' for row in answer['records'])
+def test_explicit_quote_conflict_is_rejected(client):
+    response=client.post('/api/chat',json={'question':'QT-260904-001 원가','quote_id':'QT-260904-002'})
+    assert response.status_code==422
 
 
 def test_demo_unknown_and_reset(client):
@@ -84,7 +83,7 @@ def test_ai_returns_actual_tool_records(client, monkeypatch):
             if self.count == 1:
                 return SimpleNamespace(id='first', output_text='', output=[SimpleNamespace(type='function_call', name='get_cost_estimate', arguments='{"quote_id":"QT-260904-001"}', call_id='one')])
             return SimpleNamespace(id='second', output=[], output_text='견적 후보입니다. 근거: QT-260904-001')
-    monkeypatch.setattr('v2.api.OpenAI', lambda **kwargs: SimpleNamespace(responses=FakeResponses()))
+    monkeypatch.setattr('v2.api.OpenAI', lambda **kwargs: SimpleNamespace(responses=FakeResponses(),close=lambda:None))
     result = client.post('/api/chat', json={'question': '원터치, 원가', 'mode': 'ai', 'quote_id': 'QT-260904-001'}, headers={'Authorization': 'Bearer test-code'})
     assert result.status_code == 200
     assert result.json()['records'][0]['estimated_total_krw'] == 15179600
@@ -115,7 +114,7 @@ def test_realtime_session_contract(client, monkeypatch):
     response = client.post('/api/realtime/session?quote_id=QT-260904-002', content='v=0', headers=headers)
     assert response.status_code == 200
     session = json.loads(captured['files']['session'][1])
-    assert len(session['tools']) == 12
-    assert 'QT-260904-002' in session['instructions']
-    assert session['audio']['input']['turn_detection']['interrupt_response'] is False
+    assert [t['name'] for t in session['tools']] == ['analyze_manufacturing_question']
+    assert '호출명 없이' in session['instructions']
+    assert session['audio']['input']['turn_detection']['interrupt_response'] is True
     assert client.post('/api/realtime/session', content=b'\xff', headers=headers).status_code == 422

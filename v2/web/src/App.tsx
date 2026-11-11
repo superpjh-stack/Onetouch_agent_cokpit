@@ -7,7 +7,7 @@ import {request, type Document, type Row, type Workspace} from './types';
 
 type LibraryTab = 'knowledge' | 'data';
 type SidePanel = 'library' | 'questions' | null;
-type RecommendationTab = '견적·도면' | '문서·규칙';
+type RecommendationTab = '데이터 대시보드' | '지식베이스' | '복합질문';
 
 function Modal({title, onClose, children}:{title:string; onClose:()=>void; children:ReactNode}) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -29,7 +29,7 @@ export default function App() {
   const [tableError, setTableError] = useState('');
   const [tableLoading, setTableLoading] = useState(false);
   const [libraryTab, setLibraryTab] = useState<LibraryTab>('knowledge');
-  const [recommendationTab, setRecommendationTab] = useState<RecommendationTab>('견적·도면');
+  const [recommendationTab, setRecommendationTab] = useState<RecommendationTab>('복합질문');
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [search, setSearch] = useState('');
   const [selectedRow, setSelectedRow] = useState<Row|null>(null);
@@ -81,17 +81,17 @@ export default function App() {
 
   return <div className="onetouch-app">
     <header className="app-header">
-      <div className="brand"><span className="brand-mark"><Factory size={22}/></span><div><strong>원터치 견적 AI</strong><small>도면 · 견적 · 원가</small></div></div>
-      <div className="record-status"><span>샘플 기록 기준</span><strong>{data.meta.as_of}</strong></div>
+      <div className="brand"><span className="brand-mark"><Factory size={22}/></span><div><strong>원터치 에이전트</strong><small>도면 · 견적 · 원가</small></div></div>
+      <details className="record-status"><summary>자료 출처</summary><span>샘플·미승인 · {data.meta.as_of}</span></details>
       <div className="header-actions"><button className="mobile-panel-button" onClick={() => setSidePanel('library')}><Menu size={18}/>자료</button><button className="mobile-panel-button" onClick={() => setSidePanel('questions')}><Sparkles size={18}/>질문</button><button className="icon-button" aria-label="데이터 새로고침" onClick={load}><RefreshCw size={18}/></button><button className="settings-button" onClick={() => { setSettings(true); }}><Settings2 size={17}/>연결 설정</button></div>
     </header>
 
     {sidePanel && <button className="panel-backdrop" aria-label="패널 닫기" onClick={() => setSidePanel(null)}/>}
     <div className="workspace-grid">
       <aside className={`question-panel ${sidePanel === 'questions' ? 'mobile-open' : ''}`}>
-        <div className="side-heading"><div><span>질문</span><h2>후보 질문과 이력</h2></div><button className="icon-button mobile-close" aria-label="질문 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
+        <div className="side-heading"><div><span>질문</span><h2>추천질문리스트</h2></div><button className="icon-button mobile-close" aria-label="질문 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
         <section className="history-section"><h3><History size={17}/>최근 질문 <span>{history.length}</span></h3>{history.length ? <div className="history-list">{history.map((question, index) => <button key={`${question}-${index}`} onClick={() => ask(question)}><span>{question}</span><ChevronRight size={15}/></button>)}</div> : <p className="empty-note">이 세션에서 질문하면 여기에 쌓입니다.</p>}</section>
-        <section className="recommend-section"><h3><Sparkles size={17}/>질문 예시</h3><div className="recommend-tabs" role="tablist" aria-label="질문 예시 분류"><button role="tab" aria-selected={recommendationTab === '견적·도면'} className={recommendationTab === '견적·도면' ? 'active' : ''} onClick={() => setRecommendationTab('견적·도면')}>견적·도면</button><button role="tab" aria-selected={recommendationTab === '문서·규칙'} className={recommendationTab === '문서·규칙' ? 'active' : ''} onClick={() => setRecommendationTab('문서·규칙')}>문서·규칙</button></div><ol>{recommendations.map((question, index) => <li key={question}><button onClick={() => ask(question)}><span>{String(index + 1).padStart(2, '0')}</span>{question}</button></li>)}</ol></section>
+        <section className="recommend-section"><h3><Sparkles size={17}/>{recommendationTab==='복합질문'?'추천복합질문리스트':'추천질문리스트'}</h3><div className="recommend-tabs" role="tablist" aria-label="추천질문 분류">{(['데이터 대시보드','지식베이스','복합질문'] as RecommendationTab[]).map(group=><button role="tab" key={group} aria-selected={recommendationTab===group} className={recommendationTab===group?'active':''} onClick={()=>setRecommendationTab(group)}>{group}</button>)}</div><ol>{recommendations.map((question, index) => <li key={question}><button onClick={() => ask(question)}><span>{String(index + 1).padStart(2, '0')}</span>{question}</button></li>)}</ol></section>
       </aside>
       <main className="conversation-panel"><Assistant key={connectionVersion} ref={assistant} data={data} token={token} user={null} lot={contextLot} onLot={setContextLot} onSettings={() => { setSettings(true); }} onSave={() => setSettings(true)} work={null} open={false} onClose={() => {}} onQuestion={rememberQuestion}/></main>
 
